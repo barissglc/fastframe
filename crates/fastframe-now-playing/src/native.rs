@@ -20,12 +20,12 @@ use crate::{App, Command, Controller, Playback, State, Wake, file_url};
 
 /// What a control event asks of the app. `track_id` is the track showing,
 /// for a "set position" to name.
-pub(crate) fn command_for(event: MediaControlEvent, track_id: &str) -> Command {
+pub(crate) fn command_for(event: MediaControlEvent, track_id: &str) -> Option<Command> {
     let step = |direction: SeekDirection, ms: i64| match direction {
         SeekDirection::Forward => Command::SeekBy(ms),
         SeekDirection::Backward => Command::SeekBy(-ms),
     };
-    match event {
+    Some(match event {
         MediaControlEvent::Play => Command::Play,
         MediaControlEvent::Pause => Command::Pause,
         MediaControlEvent::Toggle => Command::PlayPause,
@@ -42,10 +42,16 @@ pub(crate) fn command_for(event: MediaControlEvent, track_id: &str) -> Command {
             position: position.0,
         },
         MediaControlEvent::SetVolume(volume) => Command::SetVolume(volume.clamp(0.0, 1.0)),
+        MediaControlEvent::SetShuffle(shuffle) => Command::SetShuffle(shuffle),
+        MediaControlEvent::SetLike(liked) => Command::SetLike {
+            track_id: track_id.to_owned(),
+            liked,
+        },
         MediaControlEvent::OpenUri(uri) => Command::OpenUri(uri),
         MediaControlEvent::Raise => Command::Raise,
         MediaControlEvent::Quit => Command::Quit,
-    }
+        _ => return None,
+    })
 }
 
 /// Whether a remembered, paused track should make the app the Now Playing
@@ -86,7 +92,9 @@ impl Bridge {
                     .lock()
                     .unwrap_or_else(PoisonError::into_inner)
                     .clone();
-                if sender.send(command_for(event, &id)).is_ok() {
+                if let Some(command) = command_for(event, &id)
+                    && sender.send(command).is_ok()
+                {
                     wake();
                 }
             })
@@ -100,6 +108,19 @@ impl Bridge {
     }
 
     pub(crate) fn apply(&mut self, state: State) {
+        #[cfg(target_os = "macos")]
+        if state.liked != self.last.liked || state.track != self.last.track {
+            let liked = state.track.as_ref().and(state.liked);
+            if let Err(error) = self.controls.set_like(liked) {
+                log::debug!("the media controls refused the like state: {error:?}");
+            }
+        }
+        #[cfg(target_os = "macos")]
+        if state.shuffle != self.last.shuffle
+            && let Err(error) = self.controls.set_shuffle(state.shuffle)
+        {
+            log::debug!("the media controls refused the shuffle state: {error:?}");
+        }
         let track_changed = state.track != self.last.track;
         if track_changed {
             *self.track_id.lock().unwrap_or_else(PoisonError::into_inner) = state

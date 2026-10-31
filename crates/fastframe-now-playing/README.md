@@ -80,6 +80,14 @@ not there yet; set `art_file` when it lands and the controls update.
 an app without them. `Controls` says what is available at the moment (no
 next track, nothing to seek in).
 
+On macOS, `State::liked` publishes the accepted favorite state:
+`Some(false)` enables an unselected like command, `Some(true)` selects it,
+and `None` disables it. A missing track also disables it. Native clients
+send `Command::SetLike { track_id, liked }`; check the named track is still
+current, apply that explicit value (not a toggle), then publish the state
+the player accepted. Like-only and capability changes are sent immediately.
+Other platforms ignore this state.
+
 ## Platform notes
 
 - **Linux:** the player appears as `org.mpris.MediaPlayer2.<bus_name>`.

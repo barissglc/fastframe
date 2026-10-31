@@ -191,6 +191,9 @@ pub struct State {
     pub volume: Option<f64>,
     /// Shuffle, for an app that shuffles.
     pub shuffle: Option<bool>,
+    /// Whether the current track is liked. `None` disables native like support.
+    /// Only macOS currently publishes this value.
+    pub liked: Option<bool>,
     /// Repeat, for an app that repeats.
     pub repeat: Option<Repeat>,
     /// What the controls offer.
@@ -225,6 +228,13 @@ pub enum Command {
     SetVolume(f64),
     /// Turn shuffle on or off.
     SetShuffle(bool),
+    /// Set whether the named track is liked. Ignore a request for an old track.
+    SetLike {
+        /// The track meant, using [`Track::id`].
+        track_id: String,
+        /// Add (`true`) or remove (`false`) a like, without toggling.
+        liked: bool,
+    },
     /// Set what repeats.
     SetRepeat(Repeat),
     /// Open this URI, of a scheme or type in [`App`].
@@ -382,6 +392,7 @@ fn same_but_position(left: &State, right: &State) -> bool {
         && left.track == right.track
         && volume_same
         && left.shuffle == right.shuffle
+        && left.liked == right.liked
         && left.repeat == right.repeat
         && left.controls == right.controls
 }

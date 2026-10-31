@@ -177,35 +177,56 @@ mod native {
     use crate::native::{command_for, should_claim};
 
     #[test]
+    fn likes_name_the_track_and_preserve_explicit_values() {
+        for liked in [true, false, true] {
+            assert_eq!(
+                command_for(MediaControlEvent::SetLike(liked), "track-a"),
+                Some(Command::SetLike {
+                    track_id: "track-a".into(),
+                    liked
+                })
+            );
+        }
+        assert_eq!(
+            command_for(MediaControlEvent::Play, "track-a"),
+            Some(Command::Play)
+        );
+        assert_eq!(
+            command_for(MediaControlEvent::SetShuffle(true), "track-a"),
+            Some(Command::SetShuffle(true))
+        );
+    }
+
+    #[test]
     fn control_events_become_commands() {
         assert_eq!(
             command_for(MediaControlEvent::Toggle, ""),
-            Command::PlayPause
+            Some(Command::PlayPause)
         );
         assert_eq!(
             command_for(MediaControlEvent::Seek(SeekDirection::Backward), ""),
-            Command::SeekBy(-SEEK_STEP_MS)
+            Some(Command::SeekBy(-SEEK_STEP_MS))
         );
         assert_eq!(
             command_for(
                 MediaControlEvent::SeekBy(SeekDirection::Forward, Duration::from_secs(5)),
                 ""
             ),
-            Command::SeekBy(5_000)
+            Some(Command::SeekBy(5_000))
         );
         assert_eq!(
             command_for(
                 MediaControlEvent::SetPosition(MediaPosition(Duration::from_secs(30))),
                 "track-1"
             ),
-            Command::SetPosition {
+            Some(Command::SetPosition {
                 track_id: "track-1".into(),
                 position: Duration::from_secs(30),
-            }
+            })
         );
         assert_eq!(
             command_for(MediaControlEvent::SetVolume(1.5), ""),
-            Command::SetVolume(1.0)
+            Some(Command::SetVolume(1.0))
         );
     }
 
@@ -219,5 +240,21 @@ mod native {
         assert!(!should_claim(true, &state));
         state.track = None;
         assert!(!should_claim(false, &state));
+    }
+}
+
+#[test]
+fn like_changes_and_disabling_support_are_sent_without_playback_changes() {
+    let mut state = playing();
+    state.liked = Some(false);
+    let mut throttle = Throttle::default();
+    let now = Instant::now();
+    throttle.sent(state.clone());
+    assert_eq!(throttle.due(&state, now), None);
+    for liked in [Some(true), Some(false), None] {
+        state.liked = liked;
+        assert_eq!(throttle.due(&state, now), Some(false));
+        throttle.sent(state.clone());
+        assert_eq!(throttle.due(&state, now), None);
     }
 }
